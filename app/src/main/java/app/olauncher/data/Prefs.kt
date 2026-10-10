@@ -16,10 +16,20 @@ class Prefs(context: Context) {
     private val USER_STATE = "USER_STATE"
     private val LOCK_MODE = "LOCK_MODE"
     private val HOME_APPS_NUM = "HOME_APPS_NUM"
+    private val WIDGET_IDS = "WIDGET_IDS"
+    private val WIDGET_LAYOUT = "WIDGET_LAYOUT"
+    private val BOTTOM_BAR_APPS_NUM = "BOTTOM_BAR_APPS_NUM"
     private val AUTO_SHOW_KEYBOARD = "AUTO_SHOW_KEYBOARD"
     private val KEYBOARD_MESSAGE = "KEYBOARD_MESSAGE"
     private val DAILY_WALLPAPER = "DAILY_WALLPAPER"
     private val DAILY_WALLPAPER_URL = "DAILY_WALLPAPER_URL"
+    private val WALLPAPER_SOURCE_URL = "WALLPAPER_SOURCE_URL"
+    private val WALLPAPER_FEED_URL = "WALLPAPER_FEED_URL"
+    private val APOD_CREDIT = "APOD_CREDIT"
+    private val APOD_CREDIT_IMAGE_URL = "APOD_CREDIT_IMAGE_URL"
+    private val APOD_PAGE_URL = "APOD_PAGE_URL"
+    private val WALLPAPER_COLORS = "WALLPAPER_COLORS"
+    private val WALLPAPER_GRID = "WALLPAPER_GRID"
     private val HOME_ALIGNMENT = "HOME_ALIGNMENT"
     private val HOME_BOTTOM_ALIGNMENT = "HOME_BOTTOM_ALIGNMENT"
     private val APP_LABEL_ALIGNMENT = "APP_LABEL_ALIGNMENT"
@@ -29,15 +39,13 @@ class Prefs(context: Context) {
     private val SWIPE_RIGHT_ENABLED = "SWIPE_RIGHT_ENABLED"
     private val HIDDEN_APPS = "HIDDEN_APPS"
     private val HIDDEN_APPS_UPDATED = "HIDDEN_APPS_UPDATED"
-    private val SHOW_HINT_COUNTER = "SHOW_HINT_COUNTER"
+    private val INTERRUPT_APPS = "INTERRUPT_APPS"
+    private val INTERRUPT_BYPASSES = "INTERRUPT_BYPASSES"
     private val APP_THEME = "APP_THEME"
     private val ABOUT_CLICKED = "ABOUT_CLICKED"
-    private val RATE_CLICKED = "RATE_CLICKED"
     private val WALLPAPER_MSG_SHOWN = "WALLPAPER_MSG_SHOWN"
-    private val SHARE_SHOWN_TIME = "SHARE_SHOWN_TIME"
     private val TEXT_SIZE_SCALE = "TEXT_SIZE_SCALE"
     private val BOLD_FONT = "BOLD_FONT"
-    private val PRO_MESSAGE_SHOWN = "PRO_MESSAGE_SHOWN"
     private val HIDE_SET_DEFAULT_LAUNCHER = "HIDE_SET_DEFAULT_LAUNCHER"
     private val SCREEN_TIME_LAST_UPDATED = "SCREEN_TIME_LAST_UPDATED"
     private val LAUNCHER_RESTART_TIMESTAMP = "LAUNCHER_RECREATE_TIMESTAMP"
@@ -78,14 +86,11 @@ class Prefs(context: Context) {
     private val APP_USER_7 = "APP_USER_7"
     private val APP_USER_8 = "APP_USER_8"
 
-    private val APP_NAME_SWIPE_LEFT = "APP_NAME_SWIPE_LEFT"
-    private val APP_NAME_SWIPE_RIGHT = "APP_NAME_SWIPE_RIGHT"
-    private val APP_PACKAGE_SWIPE_LEFT = "APP_PACKAGE_SWIPE_LEFT"
-    private val APP_PACKAGE_SWIPE_RIGHT = "APP_PACKAGE_SWIPE_RIGHT"
-    private val APP_ACTIVITY_CLASS_NAME_SWIPE_LEFT = "APP_ACTIVITY_CLASS_NAME_SWIPE_LEFT"
-    private val APP_ACTIVITY_CLASS_NAME_SWIPE_RIGHT = "APP_ACTIVITY_CLASS_NAME_SWIPE_RIGHT"
-    private val APP_USER_SWIPE_LEFT = "APP_USER_SWIPE_LEFT"
-    private val APP_USER_SWIPE_RIGHT = "APP_USER_SWIPE_RIGHT"
+    private val BOTTOM_BAR_SLOT_1 = "BOTTOM_BAR_SLOT_1"
+    private val BOTTOM_BAR_SLOT_2 = "BOTTOM_BAR_SLOT_2"
+    private val BOTTOM_BAR_SLOT_3 = "BOTTOM_BAR_SLOT_3"
+    private val BOTTOM_BAR_SLOT_4 = "BOTTOM_BAR_SLOT_4"
+    private val BOTTOM_BAR_SLOT_5 = "BOTTOM_BAR_SLOT_5"
     private val CLOCK_APP_PACKAGE = "CLOCK_APP_PACKAGE"
     private val CLOCK_APP_USER = "CLOCK_APP_USER"
     private val CLOCK_APP_CLASS_NAME = "CLOCK_APP_CLASS_NAME"
@@ -113,10 +118,6 @@ class Prefs(context: Context) {
     private val IS_SHORTCUT_8 = "IS_SHORTCUT_8"
     private val SHORTCUT_ID_8 = "SHORTCUT_ID_8"
 
-    private val SHORTCUT_ID_SWIPE_LEFT = "SHORTCUT_ID_SWIPE_LEFT"
-    private val IS_SHORTCUT_SWIPE_LEFT = "IS_SHORTCUT_SWIPE_LEFT"
-    private val SHORTCUT_ID_SWIPE_RIGHT = "SHORTCUT_ID_SWIPE_RIGHT"
-    private val IS_SHORTCUT_SWIPE_RIGHT = "IS_SHORTCUT_SWIPE_RIGHT"
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_FILENAME, 0)
 
@@ -160,9 +161,90 @@ class Prefs(context: Context) {
         get() = prefs.getString(DAILY_WALLPAPER_URL, "").toString()
         set(value) = prefs.edit { putString(DAILY_WALLPAPER_URL, value).apply() }
 
+    // Last day key the wallpaper jobs have seen (feed: mode + image, APOD: apodDayKey); the daily job acts only when it changes
+    var wallpaperFeedUrl: String
+        get() = prefs.getString(WALLPAPER_FEED_URL, "").toString()
+        set(value) = prefs.edit { putString(WALLPAPER_FEED_URL, value).apply() }
+
+    // Attribution of the APOD image the app set last ("title — credit"), the image it belongs to and its APOD page
+    var apodCredit: String
+        get() = prefs.getString(APOD_CREDIT, "").toString()
+        set(value) = prefs.edit { putString(APOD_CREDIT, value).apply() }
+
+    var apodCreditImageUrl: String
+        get() = prefs.getString(APOD_CREDIT_IMAGE_URL, "").toString()
+        set(value) = prefs.edit { putString(APOD_CREDIT_IMAGE_URL, value).apply() }
+
+    var apodPageUrl: String
+        get() = prefs.getString(APOD_PAGE_URL, "").toString()
+        set(value) = prefs.edit { putString(APOD_PAGE_URL, value).apply() }
+
+    // Colors of the image the app set last, with its wallpaper id (see encodeWallpaperColors)
+    var wallpaperColors: String
+        get() = prefs.getString(WALLPAPER_COLORS, "").toString()
+        set(value) = prefs.edit { putString(WALLPAPER_COLORS, value).apply() }
+
+    // Average colors of that image in a coarse grid, with its wallpaper id (see encodeWallpaperGrid); written before the colors
+    var wallpaperGrid: String
+        get() = prefs.getString(WALLPAPER_GRID, "").toString()
+        set(value) = prefs.edit { putString(WALLPAPER_GRID, value).apply() }
+
+    // Same-process listener (the wallpaper worker runs in the app process); keep a reference, prefs hold it weakly
+    fun onWallpaperColorsChanged(action: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == WALLPAPER_COLORS) action() }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return listener
+    }
+
+    fun removeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+
+    var wallpaperSourceUrl: String
+        get() = prefs.getString(WALLPAPER_SOURCE_URL, "").toString()
+        set(value) = prefs.edit { putString(WALLPAPER_SOURCE_URL, value).apply() }
+
     var homeAppsNum: Int
         get() = prefs.getInt(HOME_APPS_NUM, 4)
         set(value) = prefs.edit { putInt(HOME_APPS_NUM, value).apply() }
+
+    var bottomBarAppsNum: Int
+        get() = BottomBar.coerceSlotCount(prefs.getInt(BOTTOM_BAR_APPS_NUM, 0))
+        set(value) = prefs.edit { putInt(BOTTOM_BAR_APPS_NUM, BottomBar.coerceSlotCount(value)).apply() }
+
+    /** 1-based bottom bar slot; out-of-range reads return an empty slot. */
+    fun getBottomBarSlot(slot: Int): BottomBar.Slot {
+        if (slot !in 1..BottomBar.MAX_SLOTS) return BottomBar.Slot()
+        val key = when (slot) {
+            1 -> BOTTOM_BAR_SLOT_1
+            2 -> BOTTOM_BAR_SLOT_2
+            3 -> BOTTOM_BAR_SLOT_3
+            4 -> BOTTOM_BAR_SLOT_4
+            else -> BOTTOM_BAR_SLOT_5
+        }
+        return BottomBar.Slot.parse(prefs.getString(key, null))
+    }
+
+    fun setBottomBarSlot(slot: Int, value: BottomBar.Slot) {
+        val key = when (slot) {
+            1 -> BOTTOM_BAR_SLOT_1
+            2 -> BOTTOM_BAR_SLOT_2
+            3 -> BOTTOM_BAR_SLOT_3
+            4 -> BOTTOM_BAR_SLOT_4
+            5 -> BOTTOM_BAR_SLOT_5
+            else -> return
+        }
+        prefs.edit { putString(key, value.serialize()).apply() }
+    }
+
+    var widgetLayout: List<WidgetWall.Cell>
+        get() = WidgetWall.parse(prefs.getString(WIDGET_LAYOUT, ""))
+        set(value) = prefs.edit { putString(WIDGET_LAYOUT, WidgetWall.serialize(value)).apply() }
+
+    /** Widget ids of a wall saved before the grid, in wall order; WidgetsFragment moves them onto the grid once. */
+    val legacyWidgetIds: List<Int>
+        get() = WidgetWall.parseIds(prefs.getString(WIDGET_IDS, ""))
+
+    fun clearLegacyWidgetIds() = prefs.edit { remove(WIDGET_IDS) }
 
     var homeAlignment: Int
         get() = prefs.getInt(HOME_ALIGNMENT, Gravity.START)
@@ -204,10 +286,6 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean(BOLD_FONT, false)
         set(value) = prefs.edit { putBoolean(BOLD_FONT, value).apply() }
 
-    var proMessageShown: Boolean
-        get() = prefs.getBoolean(PRO_MESSAGE_SHOWN, false)
-        set(value) = prefs.edit { putBoolean(PRO_MESSAGE_SHOWN, value).apply() }
-
     var hideSetDefaultLauncher: Boolean
         get() = prefs.getBoolean(HIDE_SET_DEFAULT_LAUNCHER, false)
         set(value) = prefs.edit { putBoolean(HIDE_SET_DEFAULT_LAUNCHER, value).apply() }
@@ -237,25 +315,22 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean(HIDDEN_APPS_UPDATED, false)
         set(value) = prefs.edit { putBoolean(HIDDEN_APPS_UPDATED, value).apply() }
 
-    var toShowHintCounter: Int
-        get() = prefs.getInt(SHOW_HINT_COUNTER, 1)
-        set(value) = prefs.edit { putInt(SHOW_HINT_COUNTER, value).apply() }
+    // "package|userHandle" keys (see [Interrupt]); bypass entries also append "|timestampMillis"
+    var interruptApps: MutableSet<String>
+        get() = prefs.getStringSet(INTERRUPT_APPS, mutableSetOf()) as MutableSet<String>
+        set(value) = prefs.edit { putStringSet(INTERRUPT_APPS, value).apply() }
+
+    var interruptBypasses: MutableSet<String>
+        get() = prefs.getStringSet(INTERRUPT_BYPASSES, mutableSetOf()) as MutableSet<String>
+        set(value) = prefs.edit { putStringSet(INTERRUPT_BYPASSES, value).apply() }
 
     var aboutClicked: Boolean
         get() = prefs.getBoolean(ABOUT_CLICKED, false)
         set(value) = prefs.edit { putBoolean(ABOUT_CLICKED, value).apply() }
 
-    var rateClicked: Boolean
-        get() = prefs.getBoolean(RATE_CLICKED, false)
-        set(value) = prefs.edit { putBoolean(RATE_CLICKED, value).apply() }
-
     var wallpaperMsgShown: Boolean
         get() = prefs.getBoolean(WALLPAPER_MSG_SHOWN, false)
         set(value) = prefs.edit { putBoolean(WALLPAPER_MSG_SHOWN, value).apply() }
-
-    var shareShownTime: Long
-        get() = prefs.getLong(SHARE_SHOWN_TIME, 0L)
-        set(value) = prefs.edit { putLong(SHARE_SHOWN_TIME, value).apply() }
 
     var appName1: String
         get() = prefs.getString(APP_NAME_1, "").toString()
@@ -385,38 +460,6 @@ class Prefs(context: Context) {
         get() = prefs.getString(APP_USER_8, "").toString()
         set(value) = prefs.edit { putString(APP_USER_8, value).apply() }
 
-    var appNameSwipeLeft: String
-        get() = prefs.getString(APP_NAME_SWIPE_LEFT, "Camera").toString()
-        set(value) = prefs.edit { putString(APP_NAME_SWIPE_LEFT, value).apply() }
-
-    var appNameSwipeRight: String
-        get() = prefs.getString(APP_NAME_SWIPE_RIGHT, "Phone").toString()
-        set(value) = prefs.edit { putString(APP_NAME_SWIPE_RIGHT, value).apply() }
-
-    var appPackageSwipeLeft: String
-        get() = prefs.getString(APP_PACKAGE_SWIPE_LEFT, "").toString()
-        set(value) = prefs.edit { putString(APP_PACKAGE_SWIPE_LEFT, value).apply() }
-
-    var appActivityClassNameSwipeLeft: String?
-        get() = prefs.getString(APP_ACTIVITY_CLASS_NAME_SWIPE_LEFT, "").toString()
-        set(value) = prefs.edit { putString(APP_ACTIVITY_CLASS_NAME_SWIPE_LEFT, value).apply() }
-
-    var appPackageSwipeRight: String
-        get() = prefs.getString(APP_PACKAGE_SWIPE_RIGHT, "").toString()
-        set(value) = prefs.edit { putString(APP_PACKAGE_SWIPE_RIGHT, value).apply() }
-
-    var appActivityClassNameRight: String?
-        get() = prefs.getString(APP_ACTIVITY_CLASS_NAME_SWIPE_RIGHT, "").toString()
-        set(value) = prefs.edit { putString(APP_ACTIVITY_CLASS_NAME_SWIPE_RIGHT, value).apply() }
-
-    var appUserSwipeLeft: String
-        get() = prefs.getString(APP_USER_SWIPE_LEFT, "").toString()
-        set(value) = prefs.edit { putString(APP_USER_SWIPE_LEFT, value).apply() }
-
-    var appUserSwipeRight: String
-        get() = prefs.getString(APP_USER_SWIPE_RIGHT, "").toString()
-        set(value) = prefs.edit { putString(APP_USER_SWIPE_RIGHT, value).apply() }
-
     var clockAppPackage: String
         get() = prefs.getString(CLOCK_APP_PACKAGE, "").toString()
         set(value) = prefs.edit { putString(CLOCK_APP_PACKAGE, value).apply() }
@@ -516,22 +559,6 @@ class Prefs(context: Context) {
     var shortcutId8: String
         get() = prefs.getString(SHORTCUT_ID_8, "").toString()
         set(value) = prefs.edit { putString(SHORTCUT_ID_8, value) }
-
-    var shortcutIdSwipeLeft: String
-        get() = prefs.getString(SHORTCUT_ID_SWIPE_LEFT, "").toString()
-        set(value) = prefs.edit { putString(SHORTCUT_ID_SWIPE_LEFT, value) }
-
-    var isShortcutSwipeLeft: Boolean
-        get() = prefs.getBoolean(IS_SHORTCUT_SWIPE_LEFT, false)
-        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_SWIPE_LEFT, value) }
-
-    var shortcutIdSwipeRight: String
-        get() = prefs.getString(SHORTCUT_ID_SWIPE_RIGHT, "").toString()
-        set(value) = prefs.edit { putString(SHORTCUT_ID_SWIPE_RIGHT, value) }
-
-    var isShortcutSwipeRight: Boolean
-        get() = prefs.getBoolean(IS_SHORTCUT_SWIPE_RIGHT, false)
-        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_SWIPE_RIGHT, value) }
 
     fun getAppName(location: Int): String {
         return when (location) {
@@ -637,8 +664,6 @@ class Prefs(context: Context) {
         if (clockAppPackage == packageName) clockAppClassName = activityClassName
         if (calendarAppPackage == packageName) calendarAppClassName = activityClassName
         if (screenTimeAppPackage == packageName) screenTimeAppClassName = activityClassName
-        if (appPackageSwipeLeft == packageName) appActivityClassNameSwipeLeft = activityClassName
-        if (appPackageSwipeRight == packageName) appActivityClassNameRight = activityClassName
     }
 
     fun getAppRenameLabel(appPackage: String): String = prefs.getString(appPackage, "").toString()

@@ -16,3 +16,9 @@
 .externalNativeBuild
 .cxx
 google-services.json
+.dex/
+.kotlin/
+*.apk
+*.aab
+*.keystore
+keystore.properties

@@ -1,7 +1,9 @@
 package app.olauncher.helper
 
 import android.annotation.SuppressLint
+import android.app.WallpaperColors
 import android.app.WallpaperManager
+import android.app.role.RoleManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -10,9 +12,11 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.res.Configuration
 import android.content.res.Configuration.UI_MODE_NIGHT_YES
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Point
@@ -22,36 +26,56 @@ import android.os.UserHandle
 import android.os.UserManager
 import android.provider.AlarmClock
 import android.provider.CalendarContract
-import android.provider.MediaStore
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.util.Log
 import android.util.TypedValue
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.AttrRes
 import androidx.annotation.ColorInt
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.graphics.createBitmap
-import androidx.core.net.toUri
+import androidx.core.view.children
 import app.olauncher.BuildConfig
 import app.olauncher.R
 import app.olauncher.data.AppModel
+import app.olauncher.data.Box
 import app.olauncher.data.Constants
+import app.olauncher.data.GRID_COLUMNS
 import app.olauncher.data.Prefs
+import app.olauncher.data.TONE_POINTS
+import app.olauncher.data.TextChoice
+import app.olauncher.data.WallpaperFeed
+import app.olauncher.data.WallpaperGrid
+import app.olauncher.data.MAX_WALLPAPER_BYTES
+import app.olauncher.data.coverSampleSize
+import app.olauncher.data.averageGrid
+import app.olauncher.data.backgroundLuminances
+import app.olauncher.data.decodeWallpaperColors
+import app.olauncher.data.decodeWallpaperGrid
+import app.olauncher.data.encodeWallpaperColors
+import app.olauncher.data.encodeWallpaperGrid
+import app.olauncher.data.gridRows
+import app.olauncher.data.isLightRgb
+import app.olauncher.data.oneUiWallpaperDims
+import app.olauncher.data.parseWallpaperFeed
+import app.olauncher.data.pickTextColors
+import app.olauncher.data.screenToImage
 import app.olauncher.data.shortcutIdentity
+import app.olauncher.data.textSeed
+import app.olauncher.data.wallpaperTextColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.InputStream
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.Collator
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.Scanner
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -271,7 +295,14 @@ fun getUserHandleFromString(context: Context, userHandleString: String): UserHan
     return android.os.Process.myUserHandle()
 }
 
+// The HOME role is the stored choice. The preferred HOME activity is briefly cleared whenever the role
+// controller re-grants default roles (One UI does it on package changes), so resolveActivity can say "not default"
 fun isOlauncherDefault(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val roleManager = context.getSystemService(RoleManager::class.java)
+        if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_HOME))
+            return roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+    }
     val launcherPackageName = getDefaultLauncherPackage(context)
     return BuildConfig.APPLICATION_ID == launcherPackageName
 }
@@ -287,19 +318,9 @@ fun getDefaultLauncherPackage(context: Context): String {
     } else "android"
 }
 
-fun setPlainWallpaperByTheme(context: Context, appTheme: Int) {
-    when (appTheme) {
-        AppCompatDelegate.MODE_NIGHT_YES -> setPlainWallpaper(context, android.R.color.black)
-        AppCompatDelegate.MODE_NIGHT_NO -> setPlainWallpaper(context, android.R.color.white)
-        else -> {
-            if (context.isDarkThemeOn())
-                setPlainWallpaper(context, android.R.color.black)
-            else setPlainWallpaper(context, android.R.color.white)
-        }
-    }
-}
-
 fun setPlainWallpaper(context: Context, color: Int) {
+    // The feed image is gone, so the daily job must apply it again
+    Prefs(context).wallpaperFeedUrl = ""
     try {
         val bitmap = createBitmap(1000, 2000)
         bitmap.eraseColor(context.getColor(color))
@@ -313,6 +334,125 @@ fun setPlainWallpaper(context: Context, color: Int) {
     } catch (e: Exception) {
         e.printStackTrace()
     }
+}
+
+/**
+ * Whether the system wallpaper wants dark text (a light wallpaper), or null when unknown: API < 27, or the
+ * system has not analysed the wallpaper yet. API 31+ has the dark-text hint; API 27-30 only the primary color.
+ */
+@RequiresApi(Build.VERSION_CODES.O_MR1)
+fun wallpaperWantsDarkText(colors: WallpaperColors?): Boolean? {
+    colors ?: return null
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        colors.colorHints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT != 0
+    else
+        isLightRgb(colors.primaryColor.toArgb())
+}
+
+/**
+ * Colors of the current system wallpaper. One UI returns null from getWallpaperColors, so for an image the app set
+ * (same wallpaper id) the colors computed from its bitmap are used; other wallpapers fall back to the system's.
+ */
+@RequiresApi(Build.VERSION_CODES.O_MR1)
+fun currentWallpaperColors(context: Context): WallpaperColors? {
+    val manager = WallpaperManager.getInstance(context)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val stored = decodeWallpaperColors(Prefs(context).wallpaperColors)
+        if (stored != null && stored.id == manager.getWallpaperId(WallpaperManager.FLAG_SYSTEM)) {
+            val colors = stored.colors.map { Color.valueOf(it) }
+            return WallpaperColors(colors[0], colors.getOrNull(1), colors.getOrNull(2), stored.hints)
+        }
+    }
+    return manager.getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
+}
+
+/** API 31+: a tone of the wallpaper's own colors; black/white before or when the wallpaper is grey. */
+@RequiresApi(Build.VERSION_CODES.O_MR1)
+fun homeTextColor(colors: WallpaperColors, darkText: Boolean): Int {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        wallpaperTextColor(
+            darkText,
+            listOfNotNull(colors.primaryColor, colors.secondaryColor, colors.tertiaryColor).map { it.toArgb() }
+        )?.let { return it }
+    return if (darkText) Color.BLACK else Color.WHITE
+}
+
+/**
+ * Text colors for the home screen's blocks of texts, [blocks] holding the screen boxes of each block's texts (see
+ * textBoxes), measured on the wallpaper image the app set: the background behind each box is looked up in the image's
+ * grid as the system shows it (zoomed or dimmed, see wallpaperDisplay), the hue comes from [colors] (API 31+, as in
+ * homeTextColor). Null when the current wallpaper is not such an image.
+ */
+@RequiresApi(Build.VERSION_CODES.O_MR1)
+fun homeTextChoices(context: Context, blocks: List<List<Box>>, colors: WallpaperColors?): List<List<TextChoice?>>? {
+    val grid = decodeWallpaperGrid(Prefs(context).wallpaperGrid) ?: return null
+    if (grid.id != WallpaperManager.getInstance(context).getWallpaperId(WallpaperManager.FLAG_SYSTEM)) return null
+    val (screenWidth, screenHeight) = getScreenDimensions(context)
+    val seed = if (colors != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        textSeed(listOfNotNull(colors.primaryColor, colors.secondaryColor, colors.tertiaryColor).map { it.toArgb() })
+    else null
+    val (zoom, dims) = wallpaperDisplay(context)
+    val backgrounds = blocks.map { boxes ->
+        boxes.map { screenBox ->
+            val box = screenToImage(screenBox, screenWidth, screenHeight, grid.width, grid.height, zoom)
+            dims.flatMap { grid.backgroundLuminances(box, it).orEmpty() }
+        }
+    }
+    return pickTextColors(seed, backgrounds)
+}
+
+// How the system shows the home wallpaper: zoom and possible dimming factors. AOSP zooms it in by
+// config_wallpaperMaxScale (1.1; measured on the emulator) unless the launcher zooms it out, which needs a hidden API.
+// One UI reports 1.1 too but shows the image as set, and dims it in dark mode (both measured on the SM-F776B)
+@SuppressLint("DiscouragedApi") // a framework resource has no R field to use
+private fun wallpaperDisplay(context: Context): Pair<Double, List<Double>> {
+    if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) {
+        // The system's own mode; the app's theme is forced separately
+        val night = Resources.getSystem().configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == UI_MODE_NIGHT_YES
+        val setting = runCatching { Settings.System.getInt(context.contentResolver, "display_night_theme_wallpaper") }
+        return 1.0 to oneUiWallpaperDims(night, setting.getOrNull())
+    }
+    val resources = Resources.getSystem()
+    val id = resources.getIdentifier("config_wallpaperMaxScale", "dimen", "android")
+    val zoom = if (id == 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) 1.0
+    else runCatching { resources.getFloat(id).toDouble() }.getOrDefault(1.0).coerceAtLeast(1.0)
+    return zoom to listOf(1.0)
+}
+
+/** The visible texts and icons in [view] with their screen boxes (a text's laid-out lines, not the whole view). */
+fun textBoxes(view: View): List<Pair<View, Box>> {
+    val boxes = mutableListOf<Pair<View, Box>>()
+    val location = IntArray(2)
+    fun collect(v: View) {
+        if (!v.isShown || v.width == 0 || v.height == 0) return
+        if (v is ViewGroup) {
+            v.children.forEach { collect(it) }
+            return
+        }
+        if (v !is TextView && (v !is ImageView || v.drawable == null)) return
+        v.getLocationOnScreen(location)
+        var left = v.paddingLeft.toDouble()
+        var right = (v.width - v.paddingRight).toDouble()
+        var top = v.paddingTop.toDouble()
+        var bottom = (v.height - v.paddingBottom).toDouble()
+        if (v is TextView) {
+            left = v.totalPaddingLeft.toDouble()
+            right = (v.width - v.totalPaddingRight).toDouble()
+            top = v.totalPaddingTop.toDouble()
+            bottom = (v.height - v.totalPaddingBottom).toDouble()
+            val layout = v.layout
+            // A hint has no laid-out lines here; it keeps the whole text area
+            if (layout != null && layout.lineCount > 0 && v.text.isNotEmpty()) {
+                val lines = 0 until layout.lineCount
+                right = left + lines.maxOf { layout.getLineRight(it) } - v.scrollX
+                left += lines.minOf { layout.getLineLeft(it) } - v.scrollX
+            }
+        }
+        val box = Box(location[0] + left, location[1] + top, location[0] + right, location[1] + bottom)
+        if (!box.isEmpty) boxes.add(v to box)
+    }
+    collect(view)
+    return boxes
 }
 
 fun getChangedAppTheme(context: Context, currentAppTheme: Int): Int {
@@ -336,7 +476,9 @@ fun openAppInfo(context: Context, userHandle: UserHandle, packageName: String) {
         context.showToast(context.getString(R.string.unable_to_open_app_info))
 }
 
-suspend fun getBitmapFromURL(src: String?): Bitmap? {
+// Decoded at about [reqWidth] x [reqHeight] (coverSampleSize), so a full size image does not run out of memory;
+// images over MAX_WALLPAPER_BYTES are not downloaded
+suspend fun getBitmapFromURL(src: String?, reqWidth: Int, reqHeight: Int): Bitmap? {
     return withContext(Dispatchers.IO) {
         var bitmap: Bitmap? = null
         try {
@@ -345,8 +487,24 @@ suspend fun getBitmapFromURL(src: String?): Bitmap? {
                 .openConnection() as HttpURLConnection
             connection.doInput = true
             connection.connect()
-            val input: InputStream = connection.inputStream
-            bitmap = BitmapFactory.decodeStream(input)
+            if (connection.contentLengthLong > MAX_WALLPAPER_BYTES) return@withContext null
+            val bytes = connection.inputStream.use { input ->
+                val buffer = ByteArrayOutputStream()
+                val chunk = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(chunk)
+                    if (read < 0) break
+                    buffer.write(chunk, 0, read)
+                    if (buffer.size() > MAX_WALLPAPER_BYTES) return@withContext null
+                }
+                buffer.toByteArray()
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = coverSampleSize(bounds.outWidth, bounds.outHeight, reqWidth, reqHeight)
+            }
+            bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -386,17 +544,28 @@ suspend fun getWallpaperBitmap(originalImage: Bitmap, width: Int, height: Int): 
 
 suspend fun setWallpaper(appContext: Context, url: String): Boolean {
     return withContext(Dispatchers.IO) {
-        val originalImageBitmap = getBitmapFromURL(url) ?: return@withContext false
         if (appContext.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && isTablet(appContext).not())
             return@withContext false
+        val (width, height) = getScreenDimensions(appContext)
+        val originalImageBitmap = getBitmapFromURL(url, width, height) ?: return@withContext false
 
         val wallpaperManager = WallpaperManager.getInstance(appContext)
-        val (width, height) = getScreenDimensions(appContext)
         val scaledBitmap = getWallpaperBitmap(originalImageBitmap, width, height)
 
+        // Computed before the bitmap is set, so the stored colors are in place when the new id is saved
+        val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) WallpaperColors.fromBitmap(scaledBitmap) else null
+        val grid = wallpaperGridOf(scaledBitmap)
         try {
-            wallpaperManager.setBitmap(scaledBitmap, null, false, WallpaperManager.FLAG_SYSTEM)
+            val id = wallpaperManager.setBitmap(scaledBitmap, null, false, WallpaperManager.FLAG_SYSTEM)
             wallpaperManager.setBitmap(scaledBitmap, null, false, WallpaperManager.FLAG_LOCK)
+            // Before the colors: their change listener re-colors the home texts
+            Prefs(appContext).wallpaperGrid = encodeWallpaperGrid(grid(id))
+            if (colors != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                Prefs(appContext).wallpaperColors = encodeWallpaperColors(
+                    id,
+                    colors.colorHints,
+                    listOfNotNull(colors.primaryColor, colors.secondaryColor, colors.tertiaryColor).map { it.toArgb() }
+                )
         } catch (e: Exception) {
             return@withContext false
         }
@@ -411,6 +580,18 @@ suspend fun setWallpaper(appContext: Context, url: String): Boolean {
     }
 }
 
+// Average colors of the image as it is shown (the app crops it to the screen); the id is known once it is set
+private fun wallpaperGridOf(bitmap: Bitmap): (id: Int) -> WallpaperGrid {
+    val width = bitmap.width
+    val height = bitmap.height
+    val rows = gridRows(width, height)
+    val tones = ByteArray(GRID_COLUMNS * rows * TONE_POINTS)
+    val cells = averageGrid(width, height, GRID_COLUMNS, rows, tones) { y, pixels ->
+        bitmap.getPixels(pixels, 0, width, 0, y, width, 1)
+    }
+    return { id -> WallpaperGrid(id, width, height, GRID_COLUMNS, rows, cells, tones) }
+}
+
 fun getScreenDimensions(context: Context): Pair<Int, Int> {
     val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     val point = Point()
@@ -418,47 +599,27 @@ fun getScreenDimensions(context: Context): Pair<Int, Int> {
     return Pair(point.x, point.y)
 }
 
-suspend fun getTodaysWallpaper(wallType: String, firstOpenTime: Long): String {
+/** Reads the user's wallpaper source JSON for [wallType], or null on any failure. */
+suspend fun fetchWallpaperFeed(sourceUrl: String, wallType: String, timeoutMs: Int = 15_000): WallpaperFeed? =
+    fetchText(sourceUrl, timeoutMs)?.let { parseWallpaperFeed(it, wallType) }
+
+/** Body of a GET answered with 200, or null on any failure (no network, timeout, an error answer). */
+suspend fun fetchText(url: String, timeoutMs: Int = 15_000): String? {
     return withContext(Dispatchers.IO) {
-        var wallpaperUrl: String
         try {
-            val key = if (firstOpenTime.isDaySince() < 10)
-                String.format("0_%s", firstOpenTime.isDaySince().toString())
-            else {
-                val month = SimpleDateFormat("M", Locale.ENGLISH).format(Date()) ?: "0"
-                val day = SimpleDateFormat("d", Locale.ENGLISH).format(Date()) ?: "0"
-                String.format("%s_%s", month, day)
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = timeoutMs
+            connection.readTimeout = timeoutMs
+            try {
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                connection.disconnect()
             }
-
-            val url = URL(Constants.URL_WALLPAPERS)
-            val connection: HttpURLConnection = url.openConnection() as HttpURLConnection
-            connection.doInput = true
-            connection.connect()
-
-            val inputStream = connection.inputStream
-            val scanner = Scanner(inputStream)
-            val stringBuffer = StringBuffer()
-            while (scanner.hasNext()) {
-                stringBuffer.append(scanner.nextLine())
-            }
-
-            val json = JSONObject(stringBuffer.toString())
-            val wallpapers = json.getString(key)
-            val wallpapersJson = JSONObject(wallpapers)
-            wallpaperUrl = wallpapersJson.getString(wallType)
-            wallpaperUrl
-
         } catch (e: Exception) {
-            wallpaperUrl = getBackupWallpaper(wallType)
-            wallpaperUrl
+            null
         }
     }
-}
-
-fun getBackupWallpaper(wallType: String): String {
-    return if (wallType == Constants.WALL_TYPE_LIGHT)
-        Constants.URL_DEFAULT_LIGHT_WALLPAPER
-    else Constants.URL_DEFAULT_DARK_WALLPAPER
 }
 
 @SuppressLint("WrongConstant", "PrivateApi")
@@ -469,24 +630,6 @@ fun expandNotificationDrawer(context: Context) {
         val statusBarManager = Class.forName("android.app.StatusBarManager")
         val method = statusBarManager.getMethod("expandNotificationsPanel")
         method.invoke(statusBarService)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
-fun openDialerApp(context: Context) {
-    try {
-        val sendIntent = Intent(Intent.ACTION_DIAL)
-        context.startActivity(sendIntent)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
-fun openCameraApp(context: Context) {
-    try {
-        val sendIntent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-        context.startActivity(sendIntent)
     } catch (e: Exception) {
         e.printStackTrace()
     }
@@ -597,30 +740,6 @@ fun Context.getColorFromAttr(
 ): Int {
     theme.resolveAttribute(attrColor, typedValue, resolveRefs)
     return typedValue.data
-}
-
-fun Context.shareApp() {
-    val message = getString(R.string.are_you_using_your_phone_or_is_your_phone_using_you) +
-            "\n" + Constants.URL_OLAUNCHER_PLAY_STORE
-    val sendIntent: Intent = Intent().apply {
-        action = Intent.ACTION_SEND
-        putExtra(Intent.EXTRA_TEXT, message)
-        type = "text/plain"
-    }
-
-    val shareIntent = Intent.createChooser(sendIntent, null)
-    startActivity(shareIntent)
-}
-
-fun Context.rateApp() {
-    val intent = Intent(
-        Intent.ACTION_VIEW,
-        Constants.URL_OLAUNCHER_PLAY_STORE.toUri()
-    )
-    var flags = Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-    flags = flags or Intent.FLAG_ACTIVITY_NEW_DOCUMENT
-    intent.addFlags(flags)
-    startActivity(intent)
 }
 
 @RequiresApi(Build.VERSION_CODES.N_MR1)

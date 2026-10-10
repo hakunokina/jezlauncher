@@ -1,0 +1,85 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "8dac1655aedd3b640d79fcc5dd24d9d4",
+    "entities": [
+      {
+        "tableName": "notes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `text` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `strikedAt` INTEGER, `position` INTEGER NOT NULL DEFAULT 0, `schedule_type` TEXT, `schedule_minuteOfDay` INTEGER, `schedule_days` INTEGER, `schedule_at` INTEGER, `schedule_alert` TEXT, `schedule_leadMinutes` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strikedAt",
+            "columnName": "strikedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "schedule.type",
+            "columnName": "schedule_type",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "schedule.minuteOfDay",
+            "columnName": "schedule_minuteOfDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "schedule.days",
+            "columnName": "schedule_days",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "schedule.at",
+            "columnName": "schedule_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "schedule.alert",
+            "columnName": "schedule_alert",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "schedule.leadMinutes",
+            "columnName": "schedule_leadMinutes",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8dac1655aedd3b640d79fcc5dd24d9d4')"
+    ]
+  }
+}

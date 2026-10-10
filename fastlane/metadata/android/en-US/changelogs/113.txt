@@ -1,0 +1,6 @@
+First public release of JezLauncher.
+
+- Widget wall on a 4-column grid with drag to move and edge resize
+- Notes with daily, weekly and one-off reminders (notification, full screen or alarm)
+- Daily wallpaper from NASA APOD or your own feed
+- Home screen text colour follows the wallpaper

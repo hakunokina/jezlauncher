@@ -21,29 +21,31 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.findNavController
+import androidx.work.ExistingWorkPolicy
 import app.olauncher.data.Constants
 import app.olauncher.data.Prefs
+import app.olauncher.data.isOtherMode
+import app.olauncher.data.wallTypeAt
 import app.olauncher.databinding.ActivityMainBinding
 import app.olauncher.helper.getColorFromAttr
 import app.olauncher.helper.hasBeenDays
 import app.olauncher.helper.hasBeenHours
 import app.olauncher.helper.hasBeenMinutes
-import app.olauncher.helper.isDarkThemeOn
 import app.olauncher.helper.isDaySince
 import app.olauncher.helper.isDefaultLauncher
+import app.olauncher.helper.NoteAlerts
 import app.olauncher.helper.OlDialog
 import app.olauncher.helper.isEinkDisplay
 import app.olauncher.helper.isOlauncherDefault
 import app.olauncher.helper.isSystemAnimationsDisabled
 import app.olauncher.helper.isTablet
 import app.olauncher.helper.openUrl
-import app.olauncher.helper.rateApp
 import app.olauncher.helper.resetLauncherViaFakeActivity
-import app.olauncher.helper.setPlainWallpaper
-import app.olauncher.helper.shareApp
+import app.olauncher.helper.scheduleWallpaperSwitch
 import app.olauncher.helper.showLauncherSelector
 import app.olauncher.helper.showMessageDialog
 import app.olauncher.helper.showToast
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -107,6 +109,8 @@ class MainActivity : AppCompatActivity() {
         viewModel.getAppList()
         registerShortcutCallback()
         setupOrientation()
+        // Note alerts are gone after a force stop or a revoked exact alarm permission; the launcher always comes back
+        lifecycleScope.launch(Dispatchers.IO) { NoteAlerts.rescheduleAll(applicationContext) }
 
         window.addFlags(FLAG_LAYOUT_NO_LIMITS)
 
@@ -128,12 +132,24 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         restartLauncherOrCheckTheme()
+        refreshWallpaperIfModeChanged()
+    }
+
+    // The 05:00/19:00 job can run late (doze, clock or time zone change); apply now when the feed image was applied
+    // for the other pool. KEEP: a new wallpaper restarts this activity while the switch job may still be running
+    private fun refreshWallpaperIfModeChanged() {
+        if (!prefs.dailyWallpaper || prefs.wallpaperSourceUrl.isBlank()) return
+        scheduleWallpaperSwitch(this, ExistingWorkPolicy.KEEP)
+        if (isOtherMode(prefs.wallpaperFeedUrl, wallTypeAt(Calendar.getInstance())))
+            viewModel.refreshWallpaperNow(keepRunning = true)
     }
 
     override fun onResume() {
         super.onResume()
         isResumed = true
         viewModel.isPrivateSpaceToggling = false
+        viewModel.isUninstalling = false
+        viewModel.isGrantingPermission = false
         viewModel.getAppList()
     }
 
@@ -189,11 +205,9 @@ class MainActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         AppCompatDelegate.setDefaultNightMode(prefs.appTheme)
-        if (prefs.dailyWallpaper && AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM) {
-            setPlainWallpaper()
-            viewModel.setWallpaperWorker()
+        // The wallpaper does not follow the system dark mode: APOD has one image a day, a custom feed follows the local time
+        if (prefs.dailyWallpaper && AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
             recreate()
-        }
     }
 
     private fun initObservers(viewModel: MainViewModel) {
@@ -217,37 +231,11 @@ class MainActivity : AppCompatActivity() {
 
                 Constants.Dialog.WALLPAPER -> {
                     prefs.wallpaperMsgShown = true
-                    prefs.userState = Constants.UserState.REVIEW
+                    prefs.userState = Constants.UserState.DONE
                     showMessage(R.string.did_you_know, R.string.wallpaper_message, R.string.enable) {
                         prefs.dailyWallpaper = true
                         viewModel.setWallpaperWorker()
                         showToast(getString(R.string.your_wallpaper_will_update_shortly))
-                    }
-                }
-
-                Constants.Dialog.REVIEW -> {
-                    prefs.userState = Constants.UserState.RATE
-                    showMessage(R.string.hey, R.string.review_message, R.string.leave_a_review) {
-                        prefs.rateClicked = true
-                        showToast("😇❤️")
-                        rateApp()
-                    }
-                }
-
-                Constants.Dialog.RATE -> {
-                    prefs.userState = Constants.UserState.SHARE
-                    showMessage(R.string.app_name, R.string.rate_us_message, R.string.rate_now) {
-                        prefs.rateClicked = true
-                        showToast("🤩❤️")
-                        rateApp()
-                    }
-                }
-
-                Constants.Dialog.SHARE -> {
-                    prefs.shareShownTime = System.currentTimeMillis()
-                    showMessage(R.string.hey, R.string.share_message, R.string.share_now) {
-                        showToast("😊❤️")
-                        shareApp()
                     }
                 }
 
@@ -264,12 +252,6 @@ class MainActivity : AppCompatActivity() {
                 Constants.Dialog.DIGITAL_WELLBEING -> {
                     showMessage(R.string.screen_time, R.string.app_usage_message, R.string.permission) {
                         startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    }
-                }
-
-                Constants.Dialog.PRO_MESSAGE -> {
-                    showMessage(R.string.hey, R.string.pro_message, R.string.olauncher_pro) {
-                        openUrl(Constants.URL_OLAUNCHER_PRO)
                     }
                 }
             }
@@ -305,32 +287,9 @@ class MainActivity : AppCompatActivity() {
 
             Constants.UserState.WALLPAPER -> {
                 if (prefs.wallpaperMsgShown || prefs.dailyWallpaper)
-                    prefs.userState = Constants.UserState.REVIEW
+                    prefs.userState = Constants.UserState.DONE
                 else if (isOlauncherDefault(this))
                     viewModel.showDialog.postValue(Constants.Dialog.WALLPAPER)
-            }
-
-            Constants.UserState.REVIEW -> {
-                if (prefs.rateClicked)
-                    prefs.userState = Constants.UserState.SHARE
-                else if (isOlauncherDefault(this) && prefs.firstOpenTime.hasBeenHours(1))
-                    viewModel.showDialog.postValue(Constants.Dialog.REVIEW)
-            }
-
-            Constants.UserState.RATE -> {
-                if (prefs.rateClicked)
-                    prefs.userState = Constants.UserState.SHARE
-                else if (isOlauncherDefault(this)
-                    && prefs.firstOpenTime.isDaySince() >= 7
-                    && calendar.get(Calendar.HOUR_OF_DAY) >= 16
-                ) viewModel.showDialog.postValue(Constants.Dialog.RATE)
-            }
-
-            Constants.UserState.SHARE -> {
-                if (isOlauncherDefault(this) && prefs.firstOpenTime.hasBeenDays(14)
-                    && prefs.shareShownTime.isDaySince() >= 70
-                    && calendar.get(Calendar.HOUR_OF_DAY) >= 16
-                ) viewModel.showDialog.postValue(Constants.Dialog.SHARE)
             }
         }
     }
@@ -344,16 +303,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun backToHomeScreen() {
-        if (viewModel.isPrivateSpaceToggling) return
+        if (viewModel.isPrivateSpaceToggling || viewModel.isUninstalling || viewModel.isPickingWidget || viewModel.isGrantingPermission) return
         messageDialog?.dismiss()
         if (navController.currentDestination?.id != R.id.mainFragment)
             navController.popBackStack(R.id.mainFragment, false)
-    }
-
-    private fun setPlainWallpaper() {
-        if (this.isDarkThemeOn())
-            setPlainWallpaper(this, android.R.color.black)
-        else setPlainWallpaper(this, android.R.color.white)
     }
 
     private fun openLauncherChooser(resetFailed: Boolean) {
@@ -411,6 +364,9 @@ class MainActivity : AppCompatActivity() {
                 if (resultCode == Activity.RESULT_OK)
                     resetLauncherViaFakeActivity()
             }
+
+            Constants.REQUEST_CODE_WIDGET_CONFIGURE ->
+                viewModel.widgetConfigureResult.value = resultCode == Activity.RESULT_OK
         }
     }
 }

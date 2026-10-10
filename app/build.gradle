@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'com.google.devtools.ksp'
 
 android {
     compileSdk 36
@@ -14,18 +15,32 @@ android {
     }
 
     defaultConfig {
-        applicationId "app.olauncher"
+        applicationId "io.github.hakunokina.jezlauncher"
         minSdkVersion 24
         targetSdkVersion 36
-        versionCode 113
-        versionName "v6.9.17"
+        // Release CI passes both from the tag (see docs/RELEASING.md); local builds keep the upstream values
+        versionCode Integer.parseInt((project.findProperty('JEZ_VERSION_CODE') ?: '113') as String)
+        versionName (project.findProperty('JEZ_VERSION_NAME') ?: 'v6.9.17') as String
 
         resourceConfigurations += ["en", "ar", "cs", "da", "de", "el", "es-rES", "es-rUS", "fi", "fr", "he", "hi", "hr", "hu", "in", "it", "ja", "ko", "nb", "nl", "pl", "pt-rBR", "ro", "ru-rRU", "sv", "th", "tr", "uk", "vi", "zh"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        release {
+            if (project.hasProperty('JEZ_STORE_FILE') && project.hasProperty('JEZ_STORE_PASSWORD')
+                    && project.hasProperty('JEZ_KEY_ALIAS') && project.hasProperty('JEZ_KEY_PASSWORD')) {
+                storeFile file(JEZ_STORE_FILE)
+                storePassword JEZ_STORE_PASSWORD
+                keyAlias JEZ_KEY_ALIAS
+                keyPassword JEZ_KEY_PASSWORD
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (signingConfigs.release.storeFile != null) signingConfig signingConfigs.release
             debuggable false
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -48,6 +63,10 @@ android {
     namespace 'app.olauncher'
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar"])
     implementation libs.kotlin.stdlib
@@ -65,8 +84,18 @@ dependencies {
     // Work Manager
     implementation libs.work.runtime.ktx
 
+    // Room
+    implementation libs.room.runtime
+    implementation libs.room.ktx
+    ksp libs.room.compiler
+
     //Material dependency
     implementation libs.material
 
     testImplementation libs.junit
+    // android.jar stubs org.json; unit tests need the real implementation (test-only, not shipped)
+    testImplementation libs.org.json
+
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.androidx.test.ext.junit
 }

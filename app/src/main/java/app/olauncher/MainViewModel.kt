@@ -1,10 +1,8 @@
 package app.olauncher
 
 import android.app.Application
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.LauncherApps
 import android.os.Build
 import android.os.UserHandle
 import android.os.UserManager
@@ -14,14 +12,23 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import app.olauncher.data.AppModel
+import app.olauncher.data.BottomBar
 import app.olauncher.data.Constants
+import app.olauncher.data.Interrupt
 import app.olauncher.data.Prefs
+import app.olauncher.data.nextWallpaperUrl
+import app.olauncher.data.wallTypeAt
+import app.olauncher.helper.AppLauncher
 import app.olauncher.helper.SingleLiveEvent
 import app.olauncher.helper.WallpaperWorker
+import app.olauncher.helper.fetchWallpaperFeed
 import app.olauncher.helper.formattedTimeSpent
 import app.olauncher.helper.getAppsList
 import app.olauncher.helper.getPrivateSpaceApps
@@ -30,8 +37,10 @@ import app.olauncher.helper.hasBeenMinutes
 import app.olauncher.helper.isOlauncherDefault
 import app.olauncher.helper.isPackageInstalled
 import app.olauncher.helper.isPrivateSpaceLocked
+import app.olauncher.helper.scheduleWallpaperSwitch
 import app.olauncher.helper.showToast
 import app.olauncher.helper.usageStats.EventLogWrapper
+import app.olauncher.ui.InterruptActivity
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
@@ -44,7 +53,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val firstOpen = MutableLiveData<Boolean>()
     val refreshHome = MutableLiveData<Boolean>()
     val toggleDateTime = MutableLiveData<Unit>()
-    val updateSwipeApps = MutableLiveData<Any>()
     val appList = MutableLiveData<List<AppModel>?>()
     val hiddenApps = MutableLiveData<List<AppModel>?>()
     val isOlauncherDefault = MutableLiveData<Boolean>()
@@ -58,7 +66,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Suppress backToHomeScreen during Private Space lock/unlock auth
     var isPrivateSpaceToggling = false
+    var isUninstalling = false
+    var isPickingWidget = false
+    var isGrantingPermission = false
 
+    // true when the widget configure activity finished with RESULT_OK; set by MainActivity.onActivityResult
+    val widgetConfigureResult = SingleLiveEvent<Boolean>()
     val showDialog = SingleLiveEvent<String>()
     val checkForMessages = SingleLiveEvent<Unit?>()
     val resetLauncherLiveData = SingleLiveEvent<Unit?>()
@@ -70,9 +83,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (flag) {
             Constants.FLAG_LAUNCH_APP -> {
                 when (appModel) {
-                    is AppModel.PinnedShortcut -> launchShortcut(appModel)
-                    is AppModel.App ->
-                        launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+                    is AppModel.PinnedShortcut, is AppModel.App -> {
+                        val key = Interrupt.key(appModel.appPackage, appModel.user.toString())
+                        val bypasses = Interrupt.parseBypasses(prefs.interruptBypasses)
+                        if (Interrupt.shouldInterrupt(prefs.interruptApps, bypasses, key, System.currentTimeMillis())) {
+                            appContext.startActivity(
+                                InterruptActivity.newIntent(appContext, appModel)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            return
+                        }
+                        AppLauncher.start(appContext, appModel)
+                    }
 
                     else -> {}
                 }
@@ -80,7 +102,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             Constants.FLAG_HIDDEN_APPS -> {
                 if (appModel is AppModel.App) {
-                    launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+                    AppLauncher.startApp(appContext, appModel.appPackage, appModel.activityClassName, appModel.user)
+                }
+            }
+
+            Constants.FLAG_INTERRUPT_APPS -> {
+                if (appModel is AppModel.App) {
+                    val key = Interrupt.key(appModel.appPackage, appModel.user.toString())
+                    prefs.interruptApps = Interrupt.toggleSelection(prefs.interruptApps, key).toMutableSet()
                 }
             }
 
@@ -93,31 +122,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Constants.FLAG_SET_HOME_APP_7 -> saveHomeApp(appModel, 7)
             Constants.FLAG_SET_HOME_APP_8 -> saveHomeApp(appModel, 8)
 
-            Constants.FLAG_SET_SWIPE_LEFT_APP -> saveSwipeApp(appModel, isLeft = true)
-            Constants.FLAG_SET_SWIPE_RIGHT_APP -> saveSwipeApp(appModel, isLeft = false)
             Constants.FLAG_SET_CLOCK_APP -> saveClockApp(appModel)
             Constants.FLAG_SET_CALENDAR_APP -> saveCalendarApp(appModel)
             Constants.FLAG_SET_SCREEN_TIME_APP -> saveScreenTimeApp(appModel)
+
+            Constants.FLAG_SET_BOTTOM_BAR_APP_1 -> saveBottomBarApp(appModel, 1)
+            Constants.FLAG_SET_BOTTOM_BAR_APP_2 -> saveBottomBarApp(appModel, 2)
+            Constants.FLAG_SET_BOTTOM_BAR_APP_3 -> saveBottomBarApp(appModel, 3)
+            Constants.FLAG_SET_BOTTOM_BAR_APP_4 -> saveBottomBarApp(appModel, 4)
+            Constants.FLAG_SET_BOTTOM_BAR_APP_5 -> saveBottomBarApp(appModel, 5)
         }
     }
 
     private fun launchShortcut(appModel: AppModel.PinnedShortcut) {
-        val launcher = appContext.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-        val query = LauncherApps.ShortcutQuery().apply {
-            setPackage(appModel.appPackage)
-            setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
-        }
-        try {
-            val shortcut = launcher.getShortcuts(query, appModel.user)
-                ?.find { it.id == appModel.shortcutId }
-            if (shortcut == null) {
-                appContext.showToast(appContext.getString(R.string.shortcut_not_found))
-                return
-            }
-            launcher.startShortcut(shortcut, null, null)
-        } catch (_: Exception) {
-            appContext.showToast(appContext.getString(R.string.unable_to_open_shortcut))
-        }
+        AppLauncher.startShortcut(appContext, appModel.appPackage, appModel.shortcutId, appModel.user)
     }
 
     private fun saveHomeApp(appModel: AppModel, position: Int) {
@@ -278,46 +296,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshHome(false)
     }
 
-    private fun saveSwipeApp(appModel: AppModel, isLeft: Boolean) {
-        when (appModel) {
-            is AppModel.PrivateSpaceHeader -> return
-            is AppModel.App -> {
-                if (isLeft) {
-                    prefs.appNameSwipeLeft = appModel.appLabel
-                    prefs.appPackageSwipeLeft = appModel.appPackage
-                    prefs.appUserSwipeLeft = appModel.user.toString()
-                    prefs.appActivityClassNameSwipeLeft = appModel.activityClassName
-                    prefs.isShortcutSwipeLeft = false
-                    prefs.shortcutIdSwipeLeft = ""
-                } else {
-                    prefs.appNameSwipeRight = appModel.appLabel
-                    prefs.appPackageSwipeRight = appModel.appPackage
-                    prefs.appUserSwipeRight = appModel.user.toString()
-                    prefs.appActivityClassNameRight = appModel.activityClassName
-                    prefs.isShortcutSwipeRight = false
-                    prefs.shortcutIdSwipeRight = ""
-                }
-            }
-
-            is AppModel.PinnedShortcut -> {
-                if (isLeft) {
-                    prefs.appNameSwipeLeft = appModel.appLabel
-                    prefs.appPackageSwipeLeft = appModel.appPackage
-                    prefs.appUserSwipeLeft = appModel.user.toString()
-                    prefs.appActivityClassNameSwipeLeft = null
-                    prefs.isShortcutSwipeLeft = true
-                    prefs.shortcutIdSwipeLeft = appModel.shortcutId
-                } else {
-                    prefs.appNameSwipeRight = appModel.appLabel
-                    prefs.appPackageSwipeRight = appModel.appPackage
-                    prefs.appUserSwipeRight = appModel.user.toString()
-                    prefs.appActivityClassNameRight = null
-                    prefs.isShortcutSwipeRight = true
-                    prefs.shortcutIdSwipeRight = appModel.shortcutId
-                }
-            }
-        }
-        updateSwipeApps()
+    private fun saveBottomBarApp(appModel: AppModel, position: Int) {
+        // The bar shows tinted app icons only; shortcuts and headers cannot be picked
+        if (appModel !is AppModel.App) return
+        prefs.setBottomBarSlot(
+            position,
+            BottomBar.Slot(
+                packageName = appModel.appPackage,
+                activityClassName = appModel.activityClassName,
+                userString = appModel.user.toString(),
+            )
+        )
+        refreshHome(false)
     }
 
     private fun saveClockApp(appModel: AppModel) {
@@ -356,42 +346,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         toggleDateTime.postValue(Unit)
     }
 
-    private fun updateSwipeApps() {
-        updateSwipeApps.postValue(Unit)
-    }
-
     private fun launchApp(packageName: String, activityClassName: String?, userHandle: UserHandle) {
-        val launcher = appContext.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-        val activityInfo = launcher.getActivityList(packageName, userHandle)
-
-        val isActivityValid = activityClassName.isNullOrBlank().not()
-                && activityInfo.any { it.componentName.className == activityClassName }
-
-        val component = if (isActivityValid)
-            ComponentName(packageName, activityClassName)
-        else {
-            when (activityInfo.size) {
-                0 -> {
-                    appContext.showToast(appContext.getString(R.string.app_not_found))
-                    return
-                }
-
-                1 -> ComponentName(packageName, activityInfo[0].name)
-                else -> ComponentName(packageName, activityInfo[activityInfo.size - 1].name)
-            }.also { prefs.updateAppActivityClassName(packageName, it.className) }
-        }
-
-        try {
-            launcher.startMainActivity(component, userHandle, null, null)
-        } catch (e: SecurityException) {
-            try {
-                launcher.startMainActivity(component, android.os.Process.myUserHandle(), null, null)
-            } catch (e: Exception) {
-                appContext.showToast(appContext.getString(R.string.unable_to_open_app))
-            }
-        } catch (e: Exception) {
-            appContext.showToast(appContext.getString(R.string.unable_to_open_app))
-        }
+        AppLauncher.startApp(appContext, packageName, activityClassName, userHandle)
     }
 
     fun getAppList(includeHiddenApps: Boolean = false) {
@@ -428,10 +384,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
                 uploadWorkRequest
             )
+        if (prefs.wallpaperSourceUrl.isNotBlank()) scheduleWallpaperSwitch(appContext)
+    }
+
+    // [keepRunning]: do not cancel a refresh that is already queued or running (used on every foreground)
+    fun refreshWallpaperNow(keepRunning: Boolean = false) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
+            .setConstraints(constraints)
+            .build()
+        WorkManager
+            .getInstance(appContext)
+            .enqueueUniqueWork(
+                Constants.WALLPAPER_REFRESH_WORKER_NAME,
+                if (keepRunning) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE,
+                request
+            )
+    }
+
+    // Triple tap: the worker picks the next feed item when it runs. REPLACE keeps only the latest tap queued;
+    // unreachable feed or no network: the work waits for a connection and retries with exponential backoff
+    fun changeToNextWallpaper() {
+        if (!prefs.dailyWallpaper || prefs.wallpaperSourceUrl.isBlank()) return
+        viewModelScope.launch {
+            val wallType = wallTypeAt(Calendar.getInstance())
+            val feed = fetchWallpaperFeed(prefs.wallpaperSourceUrl, wallType, timeoutMs = 5_000)
+            if (feed != null && nextWallpaperUrl(feed.items, prefs.dailyWallpaperUrl) == null) {
+                appContext.showToast(R.string.wallpaper_no_other_images)
+                return@launch
+            }
+            appContext.showToast(if (feed == null) R.string.wallpaper_feed_unreachable else R.string.your_wallpaper_will_update_shortly)
+            val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
+                .setInputData(workDataOf(Constants.KEY_WALLPAPER_NEXT to true))
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .build()
+            WorkManager.getInstance(appContext)
+                .enqueueUniqueWork(Constants.WALLPAPER_NEXT_WORKER_NAME, ExistingWorkPolicy.REPLACE, request)
+        }
     }
 
     fun cancelWallpaperWorker() {
         WorkManager.getInstance(appContext).cancelUniqueWork(Constants.WALLPAPER_WORKER_NAME)
+        WorkManager.getInstance(appContext).cancelUniqueWork(Constants.WALLPAPER_NEXT_WORKER_NAME)
+        WorkManager.getInstance(appContext).cancelUniqueWork(Constants.WALLPAPER_SWITCH_WORKER_NAME)
+        prefs.wallpaperFeedUrl = ""
         prefs.dailyWallpaperUrl = ""
         prefs.dailyWallpaper = false
     }

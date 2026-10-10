@@ -22,6 +22,7 @@ import app.olauncher.MainViewModel
 import app.olauncher.R
 import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
+import app.olauncher.data.Interrupt
 import app.olauncher.data.Prefs
 import app.olauncher.databinding.FragmentAppDrawerBinding
 import app.olauncher.helper.deletePinnedShortcut
@@ -82,6 +83,8 @@ class AppDrawerFragment : BaseFragment() {
     private fun initViews() {
         if (flag == Constants.FLAG_HIDDEN_APPS)
             binding.search.queryHint = getString(R.string.hidden_apps)
+        else if (flag == Constants.FLAG_INTERRUPT_APPS)
+            binding.search.queryHint = getString(R.string.interrupt_apps_select_hint)
         else if (flag in Constants.FLAG_SET_HOME_APP_1..Constants.FLAG_SET_CALENDAR_APP)
             binding.search.queryHint = "Please select an app"
         try {
@@ -99,7 +102,7 @@ class AppDrawerFragment : BaseFragment() {
                     requireContext().openUrl(Constants.URL_DUCK_SEARCH + query.replace(" ", "%20"))
                 else if (adapter.itemCount == 0)
                     requireContext().openSearch(query?.trim())
-                else
+                else if (flag != Constants.FLAG_INTERRUPT_APPS)
                     adapter.launchFirstInList()
                 return true
             }
@@ -150,12 +153,22 @@ class AppDrawerFragment : BaseFragment() {
         adapter = AppDrawerAdapter(
             flag,
             prefs.appLabelAlignment,
-            appClickListener = { appModel ->
-                viewModel.selectedApp(appModel, flag)
-                if (flag == Constants.FLAG_LAUNCH_APP || flag == Constants.FLAG_HIDDEN_APPS)
-                    findNavController().popBackStack(R.id.mainFragment, false)
-                else
-                    findNavController().popBackStack()
+            appClickListener = { appModel, position ->
+                if (flag == Constants.FLAG_INTERRUPT_APPS) {
+                    // Multi-select: toggle the app and refresh the row's checkmark
+                    if (appModel is AppModel.App) {
+                        viewModel.selectedApp(appModel, flag)
+                        adapter.notifyItemChanged(position)
+                    } else {
+                        requireContext().showToast(getString(R.string.interrupt_apps_shortcut_unsupported))
+                    }
+                } else {
+                    viewModel.selectedApp(appModel, flag)
+                    if (flag == Constants.FLAG_LAUNCH_APP || flag == Constants.FLAG_HIDDEN_APPS)
+                        findNavController().popBackStack(R.id.mainFragment, false)
+                    else
+                        findNavController().popBackStack()
+                }
             },
             appInfoListener = {
                 openAppInfo(
@@ -184,6 +197,8 @@ class AppDrawerFragment : BaseFragment() {
                             requireContext().showToast(getString(R.string.system_app_cannot_delete))
                             openAppInfo(requireContext(), appModel.user, appModel.appPackage)
                         } else {
+                            // The system uninstall dialog stops MainActivity; stay in the drawer
+                            viewModel.isUninstalling = true
                             requireContext().uninstall(appModel.appPackage)
                         }
                     }
@@ -233,7 +248,14 @@ class AppDrawerFragment : BaseFragment() {
             privateSpaceSettingsListener = {
                 viewModel.openPrivateSpaceSettings()
                 findNavController().popBackStack(R.id.mainFragment, false)
-            }
+            },
+            selectionChecker = if (flag == Constants.FLAG_INTERRUPT_APPS) {
+                { appModel ->
+                    prefs.interruptApps.contains(
+                        Interrupt.key(appModel.appPackage, appModel.user.toString())
+                    )
+                }
+            } else null
         )
 
         linearLayoutManager = object : LinearLayoutManager(requireContext()) {

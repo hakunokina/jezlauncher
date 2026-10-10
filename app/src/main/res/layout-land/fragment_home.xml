@@ -181,6 +181,91 @@
 
     </LinearLayout>
 
+    <!-- Notes of the routine section still to do, across from the apps (both sides of centered apps) -->
+    <LinearLayout
+        android:id="@+id/homeNotesStart"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:layout_marginStart="74dp"
+        android:orientation="vertical"
+        android:paddingVertical="@dimen/home_app_padding_vertical"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/homeNotesEnd"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:layout_marginEnd="74dp"
+        android:orientation="vertical"
+        android:paddingVertical="@dimen/home_app_padding_vertical"
+        android:visibility="gone" />
+
+    <!-- Bottom icon bar: up to five tinted app icons, no background -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ImageView
+            android:id="@+id/bottomSlot1"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:clickable="true"
+            android:contentDescription="@string/app"
+            android:focusable="true"
+            android:padding="8dp"
+            android:scaleType="centerInside" />
+
+        <ImageView
+            android:id="@+id/bottomSlot2"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:clickable="true"
+            android:contentDescription="@string/app"
+            android:focusable="true"
+            android:padding="8dp"
+            android:scaleType="centerInside" />
+
+        <ImageView
+            android:id="@+id/bottomSlot3"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:clickable="true"
+            android:contentDescription="@string/app"
+            android:focusable="true"
+            android:padding="8dp"
+            android:scaleType="centerInside" />
+
+        <ImageView
+            android:id="@+id/bottomSlot4"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:clickable="true"
+            android:contentDescription="@string/app"
+            android:focusable="true"
+            android:padding="8dp"
+            android:scaleType="centerInside" />
+
+        <ImageView
+            android:id="@+id/bottomSlot5"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:clickable="true"
+            android:contentDescription="@string/app"
+            android:focusable="true"
+            android:padding="8dp"
+            android:scaleType="centerInside" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/firstRunTips"
         style="@style/TextSmall"

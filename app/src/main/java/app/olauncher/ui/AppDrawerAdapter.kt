@@ -28,13 +28,15 @@ import java.text.Normalizer
 class AppDrawerAdapter(
     private var flag: Int,
     private val appLabelGravity: Int,
-    private val appClickListener: (AppModel) -> Unit,
+    private val appClickListener: (AppModel, Int) -> Unit,
     private val appInfoListener: (AppModel) -> Unit,
     private val appDeleteListener: (AppModel) -> Unit,
     private val appHideListener: (AppModel, Int) -> Unit,
     private val appRenameListener: (AppModel, String) -> Unit,
     private val privateSpaceToggleListener: () -> Unit = {},
     private val privateSpaceSettingsListener: () -> Unit = {},
+    // Marks selected apps (interrupt selection mode) with a checkmark suffix
+    private val selectionChecker: ((AppModel) -> Boolean)? = null,
 ) : ListAdapter<AppModel, RecyclerView.ViewHolder>(DIFF_CALLBACK), Filterable {
 
     companion object {
@@ -119,7 +121,8 @@ class AppDrawerAdapter(
                     appDeleteListener,
                     appInfoListener,
                     appHideListener,
-                    appRenameListener
+                    appRenameListener,
+                    selectionChecker
                 )
             }
         } catch (e: Exception) {
@@ -166,7 +169,7 @@ class AppDrawerAdapter(
                 && flag == Constants.FLAG_LAUNCH_APP
                 && appFilteredList.isNotEmpty()
                 && appFilteredList[0] !is AppModel.PrivateSpaceHeader
-            ) appClickListener(appFilteredList[0])
+            ) appClickListener(appFilteredList[0], 0)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -202,7 +205,7 @@ class AppDrawerAdapter(
 
     fun launchFirstInList() {
         val first = appFilteredList.firstOrNull { it !is AppModel.PrivateSpaceHeader }
-        if (first != null) appClickListener(first)
+        if (first != null) appClickListener(first, appFilteredList.indexOf(first))
     }
 
     class PrivateSpaceHeaderViewHolder(private val binding: AdapterPrivateSpaceHeaderBinding) :
@@ -228,11 +231,12 @@ class AppDrawerAdapter(
             appLabelGravity: Int,
             myUserHandle: UserHandle,
             appModel: AppModel,
-            clickListener: (AppModel) -> Unit,
+            clickListener: (AppModel, Int) -> Unit,
             appDeleteListener: (AppModel) -> Unit,
             appInfoListener: (AppModel) -> Unit,
             appHideListener: (AppModel, Int) -> Unit,
             appRenameListener: (AppModel, String) -> Unit,
+            selectionChecker: ((AppModel) -> Boolean)? = null,
         ) = with(binding) {
             appHideLayout.visibility = View.GONE
             renameLayout.visibility = View.GONE
@@ -242,14 +246,16 @@ class AppDrawerAdapter(
             appTitle.text = buildString {
                 append(appModel.appLabel)
                 if (appModel.isNew) append(" ✦")
+                if (selectionChecker?.invoke(appModel) == true) append(" ✓")
             }
             appTitle.gravity = appLabelGravity
             otherProfileIndicator.isVisible = appModel.user != myUserHandle
 
-            appTitle.setOnClickListener { clickListener(appModel) }
+            appTitle.setOnClickListener { clickListener(appModel, bindingAdapterPosition) }
 
             appTitle.setOnLongClickListener {
-                if (appModel.appPackage.isNotEmpty()) {
+                // The interrupt picker only toggles selections; hide/rename/uninstall stay out of it
+                if (appModel.appPackage.isNotEmpty() && flag != Constants.FLAG_INTERRUPT_APPS) {
                     appDelete.alpha = when (
                         appModel is AppModel.PinnedShortcut || !root.context.isSystemApp(appModel.appPackage, appModel.user)
                     ) {
