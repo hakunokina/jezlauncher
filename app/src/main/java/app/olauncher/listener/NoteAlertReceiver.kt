@@ -7,6 +7,7 @@ import app.olauncher.data.NotesDatabase
 import app.olauncher.data.asOf
 import app.olauncher.data.shouldAlert
 import app.olauncher.helper.NoteAlerts
+import app.olauncher.sync.KioskSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,6 +31,8 @@ class NoteAlertReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         if (action == NoteAlerts.ACTION_PERIOD) {
             NoteAlerts.rescheduleAll(context)
+            // The kiosk shows it unchecked again too
+            KioskSync.requestSync(context)
             return
         }
         val id = intent.getLongExtra(NoteAlerts.EXTRA_NOTE_ID, -1)
@@ -45,7 +48,7 @@ class NoteAlertReceiver : BroadcastReceiver() {
             NoteAlerts.ACTION_DONE -> {
                 val now = System.currentTimeMillis()
                 val note = dao.byId(id)?.asOf(now)
-                if (note != null && !note.isStruck) dao.setStrikedAt(id, now)
+                if (note != null && !note.isStruck) dao.setStrikedAt(id, now, now)
                 NoteAlerts.dismiss(context, id)
                 NoteAlerts.rescheduleAll(context)
             }

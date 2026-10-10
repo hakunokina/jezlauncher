@@ -62,6 +62,7 @@ import app.olauncher.data.decodeWallpaperGrid
 import app.olauncher.data.encodeWallpaperColors
 import app.olauncher.data.encodeWallpaperGrid
 import app.olauncher.data.gridRows
+import app.olauncher.data.httpsUrl
 import app.olauncher.data.isLightRgb
 import app.olauncher.data.oneUiWallpaperDims
 import app.olauncher.data.parseWallpaperFeed
@@ -482,7 +483,7 @@ suspend fun getBitmapFromURL(src: String?, reqWidth: Int, reqHeight: Int): Bitma
     return withContext(Dispatchers.IO) {
         var bitmap: Bitmap? = null
         try {
-            val url = URL(src)
+            val url = httpsUrl(src)
             val connection: HttpURLConnection = url
                 .openConnection() as HttpURLConnection
             connection.doInput = true
@@ -607,7 +608,7 @@ suspend fun fetchWallpaperFeed(sourceUrl: String, wallType: String, timeoutMs: I
 suspend fun fetchText(url: String, timeoutMs: Int = 15_000): String? {
     return withContext(Dispatchers.IO) {
         try {
-            val connection = URL(url).openConnection() as HttpURLConnection
+            val connection = httpsUrl(url).openConnection() as HttpURLConnection
             connection.connectTimeout = timeoutMs
             connection.readTimeout = timeoutMs
             try {

@@ -5,15 +5,14 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <!-- The kiosk sync's pairing token stays on this phone -->
+        <exclude domain="sharedpref" path="kiosk_sync.xml" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
         -->
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="kiosk_sync.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

@@ -2,6 +2,10 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'com.google.devtools.ksp'
 
+// Optional OpenSkyLight kiosk sync of the notes (docs/KIOSK_SYNC.md). Off unless built with -Pjezlauncher.kioskSync=true:
+// then the pairing screen, the QR scanner (and its camera permission) and cleartext http to the paired tailnet host come in
+def kioskSync = (findProperty('jezlauncher.kioskSync') ?: 'false').toString().toBoolean()
+
 android {
     compileSdk 36
 
@@ -24,6 +28,16 @@ android {
 
         resourceConfigurations += ["en", "ar", "cs", "da", "de", "el", "es-rES", "es-rUS", "fi", "fr", "he", "hi", "hr", "hu", "in", "it", "ja", "ko", "nb", "nl", "pl", "pt-rBR", "ro", "ru-rRU", "sv", "th", "tr", "uk", "vi", "zh"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField "boolean", "KIOSK_SYNC", kioskSync.toString()
+    }
+
+    sourceSets {
+        main.java.srcDirs += kioskSync ? 'src/kiosk/java' : 'src/nokiosk/java'
+        if (kioskSync) {
+            main.res.srcDirs += 'src/kiosk/res'
+            debug.manifest.srcFile 'src/kiosk/AndroidManifest.xml'
+            release.manifest.srcFile 'src/kiosk/AndroidManifest.xml'
+        }
     }
 
     signingConfigs {
@@ -92,9 +106,14 @@ dependencies {
     //Material dependency
     implementation libs.material
 
+    // QR scanner of the kiosk pairing (GMS-free); only in kiosk sync builds
+    if (kioskSync) implementation libs.zxing.android.embedded
+
     testImplementation libs.junit
     // android.jar stubs org.json; unit tests need the real implementation (test-only, not shipped)
     testImplementation libs.org.json
+    // Fake kiosk server for the sync tests
+    testImplementation libs.mockwebserver
 
     androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.ext.junit

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Kiosk sync builds only. A static config cannot name the paired host (its tailnet IP comes from the pairing QR code),
+  so cleartext is permitted here and narrowed in code: KioskEndpoint takes plain http only to a tailnet IP
+  (100.64.0.0/10, fd7a:115c:a1e0::/48), a *.ts.net name only over https, and talks only to the paired host; every
+  other call requires https (httpsUrl).
+  The kiosk traffic itself runs inside Tailscale's WireGuard tunnel.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

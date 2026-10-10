@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import com.google.android.material.color.utilities.Hct
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.MalformedURLException
 import java.net.URI
+import java.net.URL
 import java.util.Calendar
 
 /** Largest wallpaper image the app downloads. */
@@ -27,6 +29,15 @@ fun isHttpsUrl(url: String): Boolean = try {
     uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrEmpty()
 } catch (e: Exception) {
     false
+}
+
+/**
+ * The URL of every network call outside the kiosk sync, https only: kiosk sync builds permit cleartext app-wide for
+ * the paired tailnet host (KioskEndpoint), so this keeps everything else off plain http. Throws for anything else.
+ */
+fun httpsUrl(url: String?): URL {
+    if (url == null || !isHttpsUrl(url)) throw MalformedURLException("https only")
+    return URL(url.trim())
 }
 
 /**

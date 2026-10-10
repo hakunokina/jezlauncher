@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged over the main manifest only in kiosk sync builds (-Pjezlauncher.kioskSync=true), see docs/KIOSK_SYNC.md -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The kiosk serves plain http inside the tailnet; KioskEndpoint lets requests go only to the paired tailnet host -->
+    <application android:networkSecurityConfig="@xml/network_security_config_kiosk">
+
+        <!-- The pairing QR scanner follows the phone's orientation instead of the library's fixed landscape -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="fullSensor"
+            tools:replace="android:screenOrientation" />
+    </application>
+
+</manifest>

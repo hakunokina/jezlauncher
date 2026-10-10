@@ -481,6 +481,54 @@
                         android:padding="8dp" />
                 </LinearLayout>
 
+                <!-- Kiosk sync builds only (BuildConfig.KIOSK_SYNC); the status line shows once paired -->
+                <LinearLayout
+                    android:id="@+id/kioskSyncRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="24dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingVertical="8dp">
+
+                        <TextView
+                            style="@style/TextSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:lines="1"
+                            android:text="@string/kiosk_sync"
+                            android:textColor="?attr/primaryColor" />
+
+                        <TextView
+                            android:id="@+id/kioskSyncStatus"
+                            style="@style/TextSmallLight"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:visibility="gone" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/kioskSync"
+                        style="@style/TextSmallBold"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="4dp"
+                        android:ellipsize="end"
+                        android:lines="1"
+                        android:maxWidth="160dp"
+                        android:padding="8dp"
+                        android:text="@string/off" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

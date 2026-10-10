@@ -47,6 +47,7 @@ import app.olauncher.helper.showPopupMenu
 import app.olauncher.helper.showStatusBar
 import app.olauncher.helper.showToast
 import app.olauncher.listener.DeviceAdmin
+import app.olauncher.sync.QrScanner
 
 class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListener {
 
@@ -58,6 +59,10 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
     private var dialog: OlDialog? = null
+    private var kioskSync: KioskSyncSettings? = null
+
+    // Registers for the camera's result, so it is made with the fragment
+    private val kioskScanner = QrScanner(this) { kioskSync?.connect(it) }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSettingsBinding.inflate(inflater, container, false)
@@ -96,6 +101,8 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
         populateActionHints()
         initClickListeners()
         initObservers()
+        if (BuildConfig.KIOSK_SYNC)
+            kioskSync = KioskSyncSettings(this, binding, kioskScanner, ::showDialog) { viewModel.isGrantingPermission = true }
     }
 
     override fun onClick(view: View) {
@@ -692,6 +699,8 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
         // Dismissing the text size dialog applies any pending scale via its dismiss listener
         dialog?.dismiss()
         dialog = null
+        kioskSync?.release()
+        kioskSync = null
         applyTextSizeScale()
         super.onDestroyView()
         _binding = null

@@ -45,6 +45,7 @@ import app.olauncher.helper.scheduleWallpaperSwitch
 import app.olauncher.helper.showLauncherSelector
 import app.olauncher.helper.showMessageDialog
 import app.olauncher.helper.showToast
+import app.olauncher.sync.KioskSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -111,6 +112,8 @@ class MainActivity : AppCompatActivity() {
         setupOrientation()
         // Note alerts are gone after a force stop or a revoked exact alarm permission; the launcher always comes back
         lifecycleScope.launch(Dispatchers.IO) { NoteAlerts.rescheduleAll(applicationContext) }
+        // Kiosk sync builds only: the kiosk's changes stream in while the launcher shows
+        KioskSync.start(this)
 
         window.addFlags(FLAG_LAYOUT_NO_LIMITS)
 

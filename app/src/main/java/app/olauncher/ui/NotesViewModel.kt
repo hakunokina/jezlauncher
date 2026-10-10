@@ -52,7 +52,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     /** Sets, changes or ([schedule] null) removes the note's schedule and re-arms its alerts. */
     fun setSchedule(note: Note, schedule: NoteSchedule?) {
         viewModelScope.launch {
-            dao.setSchedule(note.id, schedule)
+            dao.setSchedule(note.id, schedule, System.currentTimeMillis())
             if (schedule == null) NoteAlerts.cancel(getApplication(), note.id)
             NoteAlerts.rescheduleAll(getApplication())
         }
@@ -62,12 +62,12 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     fun saveOrder(rows: List<NoteRow>) {
         val changed = reorderedNotes(rows)
         if (changed.isEmpty()) return
-        viewModelScope.launch { dao.setPlaces(changed) }
+        viewModelScope.launch { dao.setPlaces(changed, System.currentTimeMillis()) }
     }
 
     fun delete(note: Note) {
         viewModelScope.launch {
-            dao.delete(note)
+            dao.delete(note.id, System.currentTimeMillis())
             if (note.schedule != null) {
                 NoteAlerts.cancel(getApplication(), note.id)
                 NoteAlerts.rescheduleAll(getApplication())

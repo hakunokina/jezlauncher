@@ -3,10 +3,11 @@ package app.olauncher.data
 import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.TimeZone
 
-@Entity(tableName = "notes")
+@Entity(tableName = "notes", indices = [Index(value = ["syncId"], unique = true)])
 data class Note(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val text: String,
@@ -22,6 +23,14 @@ data class Note(
      * are in the section anyway, so the flag only counts while there is no schedule.
      */
     @ColumnInfo(defaultValue = "0") val pinned: Boolean = false,
+    /** The note's id on the kiosk list it syncs with (a UUID); every stored row has one. */
+    @ColumnInfo(defaultValue = "") val syncId: String = "",
+    /** Last change of the note, epoch millis; the newer side wins when the phone and the kiosk both changed it. */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0,
+    /** Deleted at this time: kept as a tombstone until the kiosk has it, hidden everywhere else. */
+    val deletedAt: Long? = null,
+    /** Changed since the kiosk last took it. */
+    @ColumnInfo(defaultValue = "0") val dirty: Boolean = false,
 ) {
     val isStruck get() = strikedAt != null
 

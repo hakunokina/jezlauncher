@@ -149,6 +149,10 @@ cd jezlauncher
 
 `assembleRelease` builds an unsigned APK unless the signing properties `JEZ_STORE_FILE`, `JEZ_STORE_PASSWORD`, `JEZ_KEY_ALIAS` and `JEZ_KEY_PASSWORD` are set as Gradle properties.
 
+## Optional: OpenSkyLight kiosk sync
+
+Notes can sync both ways with a list on an OpenSkyLight kiosk in your Tailscale tailnet. It is off in the published builds: build with `./gradlew assembleRelease -Pjezlauncher.kioskSync=true` to get **Settings → Kiosk sync** (scan the kiosk's QR code, choose a list). The kiosk needs OpenSkyLight's companion sync API and the phone Tailscale; the traffic is plain http inside the tailnet (encrypted by WireGuard), allowed only to the paired tailnet host. See [docs/KIOSK_SYNC.md](docs/KIOSK_SYNC.md).
+
 ## Privacy
 
 No analytics, crash reporting, advertising or tracking libraries, and no accounts. Notes, layout and settings stay on your device. The network is used only for the daily wallpaper. Details: [PRIVACY.md](PRIVACY.md).
@@ -165,6 +169,8 @@ As the GPL asks, this is what JezLauncher changes compared with upstream Olaunch
   - Replaced the wallpaper source with NASA APOD or a user-provided feed.
   - Removed the in-app review, rating, sharing and other-app prompts.
   - Renamed the app to JezLauncher with the application id `io.github.hakunokina.jezlauncher`.
+- 2026-10-11:
+  - Added an optional two-way sync of the notes with an OpenSkyLight kiosk list, off unless built with `-Pjezlauncher.kioskSync=true`.
 
 
 ## Credits and license

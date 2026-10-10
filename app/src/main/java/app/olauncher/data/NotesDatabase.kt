@@ -6,8 +6,9 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import app.olauncher.sync.KioskSync
 
-@Database(entities = [Note::class], version = 4)
+@Database(entities = [Note::class], version = 5)
 abstract class NotesDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
 
@@ -42,13 +43,37 @@ abstract class NotesDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Adds what the kiosk sync needs: every note gets a random UUID (version 4, as text), its last change is taken
+         * as the later of creation and strike, nothing is deleted and nothing waits for the kiosk yet.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE notes ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER")
+                db.execSQL("ALTER TABLE notes ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE notes SET updatedAt = MAX(createdAt, COALESCE(strikedAt, 0)), syncId = " +
+                            "lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || " +
+                            "substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || " +
+                            "substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_syncId` ON `notes` (`syncId`)")
+            }
+        }
+
         @Volatile
         private var instance: NotesDatabase? = null
 
         fun get(context: Context): NotesDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, NotesDatabase::class.java, "notes.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                .build().also { instance = it }
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .build().also {
+                    instance = it
+                    // Every note write, from any screen or an alert, reaches the kiosk sync from here
+                    KioskSync.watch(context.applicationContext, it)
+                }
         }
     }
 }

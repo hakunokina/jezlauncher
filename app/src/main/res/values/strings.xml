@@ -47,6 +47,27 @@
     <string name="wallpaper_url_saved_off" tools:ignore="MissingTranslation">Saved. Turn on daily wallpaper to apply it</string>
     <string name="wallpaper_feed_unreachable" tools:ignore="MissingTranslation">Will change when the feed is reachable</string>
     <string name="wallpaper_no_other_images" tools:ignore="MissingTranslation">No other wallpapers in the feed</string>
+    <string name="kiosk_sync" tools:ignore="MissingTranslation">Kiosk sync</string>
+    <string name="kiosk_pair_message" tools:ignore="MissingTranslation">Scan the QR code of the OpenSkyLight kiosk, or paste its link. The phone and the kiosk need to be in the same tailnet.</string>
+    <string name="kiosk_link_hint" tools:ignore="MissingTranslation">http://100.x.y.z:port/#t=…</string>
+    <string name="kiosk_scan" tools:ignore="MissingTranslation">Scan QR</string>
+    <string name="kiosk_scan_prompt" tools:ignore="MissingTranslation">Scan the kiosk\'s QR code</string>
+    <string name="kiosk_connect" tools:ignore="MissingTranslation">Connect</string>
+    <string name="kiosk_link_invalid" tools:ignore="MissingTranslation">Not a kiosk link inside your tailnet</string>
+    <string name="kiosk_unreachable" tools:ignore="MissingTranslation">Kiosk not reachable (is Tailscale on?)</string>
+    <string name="kiosk_refused" tools:ignore="MissingTranslation">The kiosk refused the link; scan its QR code again</string>
+    <string name="kiosk_failed" tools:ignore="MissingTranslation">The kiosk did not answer as expected</string>
+    <string name="kiosk_no_lists" tools:ignore="MissingTranslation">The kiosk has no lists yet</string>
+    <string name="kiosk_sync_now" tools:ignore="MissingTranslation">Sync now</string>
+    <string name="kiosk_change_list" tools:ignore="MissingTranslation">Change list</string>
+    <string name="kiosk_unpair" tools:ignore="MissingTranslation">Unpair</string>
+    <string name="kiosk_unpair_message" tools:ignore="MissingTranslation">Stop syncing the notes with the kiosk? The notes stay on both sides.</string>
+    <string name="kiosk_status_synced" tools:ignore="MissingTranslation">Synced %s</string>
+    <string name="kiosk_status_waiting" tools:ignore="MissingTranslation">Waiting for the first sync</string>
+    <string name="kiosk_status_unreachable" tools:ignore="MissingTranslation">Kiosk not reachable, changes wait</string>
+    <string name="kiosk_status_unauthorized" tools:ignore="MissingTranslation">Kiosk refused the link, pair again</string>
+    <string name="kiosk_status_list_missing" tools:ignore="MissingTranslation">List deleted on the kiosk, choose another</string>
+    <string name="kiosk_status_failed" tools:ignore="MissingTranslation">Sync failed, trying again</string>
     <string name="swipe_left_notes" tools:ignore="MissingTranslation">Swipe left notes</string>
     <string name="swipe_right_widgets" tools:ignore="MissingTranslation">Swipe right widgets</string>
     <string name="_8">8</string>
